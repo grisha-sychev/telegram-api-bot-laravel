@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Bot\Console\Commands;
 
+use Bot\Support\Facades\Services;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -10,7 +11,7 @@ use App\Models\Bot;
 class WebhookCommand extends Command
 {
     protected $signature = 'bot:webhook 
-                            {action : Action (set, info, delete, test, auto, restart)}
+                            {action? : Action (set, info, delete, test, auto, restart, check)}
                             {bot? : Bot name or ID}
                             {url? : Webhook URL (for set action)}
                             {--secret= : Webhook secret token}
@@ -24,6 +25,9 @@ class WebhookCommand extends Command
     public function handle()
     {
         $action = $this->argument('action');
+        if (!$action) {
+            $action = $this->choice('Выберите действие', ['set', 'info', 'delete', 'test', 'auto', 'restart', 'check'], 0);
+        }
         $botIdentifier = $this->argument('bot');
 
         // Если бот не указан, запрашиваем выбор
@@ -152,7 +156,7 @@ class WebhookCommand extends Command
         $this->line("🌐 URL: {$url}");
 
         // Проверяем SSL настройки
-        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', false);
+        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', Services::isSSLAvailable() ? true : false);
         if ($noSsl) {
             $this->warn('⚠️  SSL проверка отключена');
         }
@@ -172,8 +176,8 @@ class WebhookCommand extends Command
             $response = $http->post("https://api.telegram.org/bot{$token}/setWebhook", $payload);
 
             if ($response->successful()) {
-                // Сохраняем webhook данные в БД (относительный путь)
-                $relativeUrl = "/webhook/{$bot->name}";
+                // Сохраняем webhook данные в БД (относительный путь, извлеченный из URL)
+                $relativeUrl = parse_url($url, PHP_URL_PATH) ?: null;
                 $bot->update([
                     'webhook_url' => $relativeUrl,
                     'webhook_secret' => $secret,
@@ -203,7 +207,7 @@ class WebhookCommand extends Command
         $this->info("🔍 Получение информации о webhook для бота '{$bot->name}'...");
 
         // Проверяем SSL настройки
-        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', false);
+        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', Services::isSSLAvailable() ? true : false);
         if ($noSsl) {
             $this->warn('⚠️  SSL проверка отключена');
         }
@@ -247,7 +251,7 @@ class WebhookCommand extends Command
         }
 
         // Проверяем SSL настройки
-        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', false);
+        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', Services::isSSLAvailable() ? true : false);
         if ($noSsl) {
             $this->warn('⚠️  SSL проверка отключена');
         }
@@ -292,7 +296,7 @@ class WebhookCommand extends Command
         $this->info("🧪 Тестирование webhook для бота '{$bot->name}'...");
 
         // Проверяем SSL настройки
-        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', false);
+        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', Services::isSSLAvailable() ? true : false);
         if ($noSsl) {
             $this->warn('⚠️  SSL проверка отключена');
         }
@@ -355,6 +359,14 @@ class WebhookCommand extends Command
 
         // Используем webhook URL из базы данных
         $webhookUrl = $bot->webhook_url;
+        $appUrl = rtrim(env('APP_URL', ''), '/');
+        if ($webhookUrl && str_starts_with($webhookUrl, '/')) {
+            if (!$appUrl) {
+                $this->error('❌ APP_URL не установлен в .env — невозможно сформировать полный URL');
+                return 1;
+            }
+            $webhookUrl = $appUrl . $webhookUrl;
+        }
         $secret = $bot->webhook_secret;
 
         $this->info("🌐 Webhook URL: {$webhookUrl}");
@@ -424,8 +436,8 @@ class WebhookCommand extends Command
             $response = $http->post("https://api.telegram.org/bot{$token}/setWebhook", $payload);
 
             if ($response->successful()) {
-                // Сохраняем webhook данные в БД (относительный путь)
-                $relativeUrl = "/webhook/{$bot->name}";
+                // Если удалось сформировать относительный путь, сохраняем его
+                $relativeUrl = parse_url($webhookUrl, PHP_URL_PATH) ?: null;
                 $bot->update([
                     'webhook_url' => $relativeUrl,
                     'webhook_secret' => $secret,
@@ -464,6 +476,14 @@ class WebhookCommand extends Command
 
         // Используем webhook URL из базы данных
         $webhookUrl = $bot->webhook_url;
+        $appUrl = rtrim(env('APP_URL', ''), '/');
+        if ($webhookUrl && str_starts_with($webhookUrl, '/')) {
+            if (!$appUrl) {
+                $this->error('❌ APP_URL не установлен в .env — невозможно сформировать полный URL');
+                return 1;
+            }
+            $webhookUrl = $appUrl . $webhookUrl;
+        }
         $secret = $bot->webhook_secret;
 
         $this->info("🌐 Webhook URL: {$webhookUrl}");
@@ -533,8 +553,8 @@ class WebhookCommand extends Command
             $response = $http->post("https://api.telegram.org/bot{$token}/setWebhook", $payload);
 
             if ($response->successful()) {
-                // Сохраняем webhook данные в БД (относительный путь)
-                $relativeUrl = "/webhook/{$bot->name}";
+                // Если удалось сформировать относительный путь, сохраняем его
+                $relativeUrl = parse_url($webhookUrl, PHP_URL_PATH) ?: null;
                 $bot->update([
                     'webhook_url' => $relativeUrl,
                     'webhook_secret' => $secret,
@@ -578,7 +598,7 @@ class WebhookCommand extends Command
         $this->info("🌐 Webhook URL: {$webhookUrl}");
 
         // Проверяем SSL настройки
-        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', false);
+        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', Services::isSSLAvailable() ? true : false);
         if ($noSsl) {
             $this->warn('⚠️  SSL проверка отключена');
         }
@@ -657,7 +677,7 @@ class WebhookCommand extends Command
 
         if ($info['url']) {
             $this->line("🌐 URL: {$info['url']}");
-            $this->line("🔐 Secret: " . ($info['has_custom_certificate'] ? 'Да' : 'Нет'));
+            $this->line("🔒 Кастомный сертификат: " . ($info['has_custom_certificate'] ? 'Да' : 'Нет'));
             $this->line("📊 Макс. соединений: {$info['max_connections']}");
             $this->line("📅 Последняя ошибка: " . ($info['last_error_date'] ? date('d.m.Y H:i:s', $info['last_error_date']) : 'Нет'));
             

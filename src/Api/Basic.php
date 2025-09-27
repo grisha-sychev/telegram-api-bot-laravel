@@ -25,7 +25,7 @@ class Basic extends Core
      */
     public function removeWebhook()
     {
-        return $this->method('setWebhook');
+        return $this->method('deleteWebhook');
     }
 
     /**

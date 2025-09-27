@@ -1,9 +1,8 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Bot\Console\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\File;
 use App\Models\Bot;
@@ -11,7 +10,7 @@ use App\Models\Bot;
 class MigrateCommand extends Command
 {
     protected $signature = 'bot:migrate 
-                            {action : Action (export, import, clear, backup)}
+                            {action? : Action (export, import, clear, backup)}
                             {--format=json : Export format (json, csv)}
                             {--path= : File path for import/export}
                             {--force : Force action without confirmation}';
@@ -21,6 +20,9 @@ class MigrateCommand extends Command
     public function handle()
     {
         $action = $this->argument('action');
+        if (!$action) {
+            $action = $this->choice('Выберите действие', ['export', 'import', 'clear', 'backup'], 0);
+        }
 
         switch ($action) {
             case 'export':
@@ -292,7 +294,9 @@ class MigrateCommand extends Command
             $recordData = json_decode($jsonData, true);
 
             if ($recordData) {
-                $data[$type . 's'][] = $recordData;
+                if (in_array($type, ['bot','user','chat','file'], true)) {
+                    $data[$type . 's'][] = $recordData;
+                }
             }
         }
 
@@ -421,7 +425,14 @@ class MigrateCommand extends Command
         
         try {
             $bots = Bot::all();
-            $botsData = $bots->toArray();
+            // Маскируем чувствительные данные
+            $botsData = $bots->map(function ($bot) {
+                $arr = $bot->toArray();
+                if (isset($arr['token']) && $arr['token']) {
+                    $arr['token'] = substr($arr['token'], 0, 10) . '...';
+                }
+                return $arr;
+            })->toArray();
             
             $backupDataPath = $backupPath . '/data';
             if (!is_dir($backupDataPath)) {

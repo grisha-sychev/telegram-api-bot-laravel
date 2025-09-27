@@ -10,7 +10,7 @@ use Bot\Support\Facades\Services;
 
 class LightBot extends Skeleton
 {
-    public array $commandsList;
+    public array $commandsList = [];
     
     // Новые свойства для middleware
     protected array $middleware = [];
@@ -164,12 +164,8 @@ class LightBot extends Skeleton
      */
     public function getPhotoId()
     {
-        $photos = $this->getPhoto();
-        if (isset($photos) && is_array($photos) && !empty($photos)) {
-            $largestPhoto = end($photos);
-            return $largestPhoto->getFileId();
-        }
-        return null;
+        $info = $this->getPhotoInfo();
+        return $info ? ($info['largest']['file_id'] ?? null) : null;
     }
 
     /**
@@ -1188,7 +1184,7 @@ class LightBot extends Skeleton
         is_array($message) ? $message = Services::html($message) : $message;
         $keyboard ? $keygrid = Services::grid($keyboard, $layout) : $keyboard;
         $type_keyboard === 1 ? $type = "inlineKeyboard" : $type = "keyboard";
-        return $this->sendMessage($id, $message, $keyboard ? Services::$type($keygrid) : $keyboard, null, null, "HTML", null, null, false, false, null, null);
+        return $this->sendMessage($id, $message, $keyboard ? Services::{$type}($keygrid) : $keyboard, null, null, "HTML", null, null, false, false, null, null);
     }
 
     /**
@@ -1202,7 +1198,7 @@ class LightBot extends Skeleton
      */
     public function sendSelf($message, $keyboard = null, $layout = 2, $type_keyboard = 0)
     {
-        return $this->sendOut($this->getUserId(), $message, $keyboard, $layout, $type_keyboard, "HTML");
+        return $this->sendOut($this->getUserId(), $message, $keyboard, $layout, $type_keyboard);
     }
 
     /**
@@ -1221,7 +1217,13 @@ class LightBot extends Skeleton
         $keyboard = $keyboard !== null ? Services::simpleKeyboard($keyboard, $type_keyboard) : $keyboard;
         $keyboard ? $keygrid = Services::grid($keyboard, $layout) : $keyboard;
         $type_keyboard === 1 ? $type = "inlineKeyboard" : $type = "keyboard";
-        return $this->sendPhoto($chat_id, $photo, $caption, 'HTML', null, null, null, false, false, null, null, $keyboard ? Services::$type($keygrid) : $keyboard);
+        return $this->sendPhoto(
+            $chat_id,
+            $photo,
+            $caption,
+            $keyboard ? Services::{$type}($keygrid) : $keyboard,
+            'HTML'
+        );
     }
 
     /**
@@ -1269,7 +1271,19 @@ class LightBot extends Skeleton
         $keyboard = $keyboard !== null ? Services::simpleKeyboard($keyboard, $type_keyboard) : $keyboard;
         $keyboard ? $keygrid = Services::grid($keyboard, $layout) : $keyboard;
         $type_keyboard === 1 ? $type = "inlineKeyboard" : $type = "keyboard";
-        return $this->sendVideo($chat_id, $video, null, null, null, null, null, null, $caption, 'HTML', null, false, false, null, null, $keyboard ? Services::$type($keygrid) : $keyboard);
+        return $this->sendVideo(
+            $chat_id,
+            $video,
+            $caption,
+            $keyboard ? Services::{$type}($keygrid) : $keyboard,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            'HTML'
+        );
     }
 
     /**
@@ -1369,7 +1383,7 @@ class LightBot extends Skeleton
         is_array($message) ? $message = Services::html($message) : $message;
         $keyboard ? $keygrid = Services::grid($keyboard, $layout) : $keyboard;
         $type_keyboard === 1 ? $type = "inlineKeyboard" : $type = "keyboard";
-        return $this->editMessageText($chat_id, $message_id, $message, $keyboard ? Services::$type($keygrid) : $keyboard, "HTML");
+        return $this->editMessageText($chat_id, $message_id, $message, $keyboard ? Services::{$type}($keygrid) : $keyboard, "HTML");
     }
 
     /**
@@ -1385,7 +1399,7 @@ class LightBot extends Skeleton
      */
     public function editSelf($message_id, $message, $keyboard = null, $layout = 2, $type_keyboard = 0, $parse_mode = "HTML")
     {
-        return $this->editOut($this->getUserId(), $message_id, $message, $keyboard, $layout, $type_keyboard, $parse_mode);
+        return $this->editOut($this->getUserId(), $message_id, $message, $keyboard, $layout, $type_keyboard);
     }
 
     /**
@@ -1399,7 +1413,7 @@ class LightBot extends Skeleton
      */
     public function editSelfInline($message_id, $message, $keyboard = null, $layout = 2)
     {
-        return $this->editOut($this->getUserId(), $message_id, $message, $keyboard, $layout, 1, "HTML");
+        return $this->editOut($this->getUserId(), $message_id, $message, $keyboard, $layout, 1);
     }
 
     /**
@@ -1459,7 +1473,7 @@ class LightBot extends Skeleton
 
         // Проверка для текста сообщения
         foreach ($commands as $cmd) {
-            if (strpos($messageText, $cmd) === 0) {
+            if ($messageText && strpos($messageText, $cmd) === 0) {
                 $arguments = Services::getArguments($messageText);
                 $callback($arguments); // Завершаем выполнение после нахождения совпадения
                 return;
@@ -1476,7 +1490,7 @@ class LightBot extends Skeleton
 
     public function getCommandList()
     {
-        return array_merge(...$this->commandsList);
+        return $this->commandsList ? array_merge(...$this->commandsList) : [];
     }
 
     /**
@@ -1592,7 +1606,7 @@ class LightBot extends Skeleton
     {
         $text = $this->getMessageText();
         $callbackData = $this->getCallback();
-        if (mb_substr($text, 0, 1) !== "/" && !$callbackData) {
+        if ($text !== null && mb_substr($text, 0, 1) !== "/" && !$callbackData) {
             return $callback($text);
         }
     }
@@ -1608,7 +1622,7 @@ class LightBot extends Skeleton
     {
         $command = $this->getMessageText();
         $callbackData = $this->getCallback();
-        if (mb_substr($command, 0, 1) === "/" && !$callbackData) {
+        if ($command !== null && mb_substr($command, 0, 1) === "/" && !$callbackData) {
             return $callback($command);
         }
     }

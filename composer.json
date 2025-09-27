@@ -9,6 +9,9 @@
             "Bot\\": ["src/"]
         }
     },
+    "require-dev": {
+        "tuna-am/laravel": "1.0"
+    },
     "extra": {
         "laravel": {
             "providers": [

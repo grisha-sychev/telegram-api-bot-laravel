@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Bot\Console\Commands;
 
+use Bot\Support\Facades\Services;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
@@ -137,7 +138,7 @@ class HealthCommand extends Command
         }
 
         // Настройки SSL
-        $noSsl = $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', false);
+        $noSsl = $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', Services::isSSLAvailable() ? true : false);
         
         // Подробные ошибки
         $verboseErrors = $this->confirm('Показать подробный анализ ошибок из логов?', false);
@@ -358,7 +359,7 @@ class HealthCommand extends Command
                 $test = Cache::store('redis')->get('bot_health_test');
                 
                 if ($test === 'ok') {
-                    $this->line('  🔴 Redis: Подключен');
+                    $this->line('  🟢 Redis: Подключен');
                 } else {
                     $this->warn('  ⚠️  Redis: Проблемы соединения');
                 }

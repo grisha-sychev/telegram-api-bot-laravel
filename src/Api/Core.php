@@ -17,7 +17,7 @@ class Core
     /**
      * @var string|null $token Токен бота.
      */
-    public ?string $token;
+    public ?string $token = null;
 
     /**
      * @var string|null $hostname host, связанный с ботом.
@@ -54,12 +54,54 @@ class Core
             try {
                 // Используем прямой токен если установлен, иначе получаем через Services
                 $token = $this->token ?? (new Services)->getToken($this->bot);
-                $url = "https://api.telegram.org/bot" . $token . "/" . $method . ($query ? '?' . http_build_query($query) : '');
-                
-                $response = Http::withoutVerifying()
+                $url = "https://api.telegram.org/bot" . $token . "/" . $method;
+
+                $request = Http::withoutVerifying()
                     ->timeout(30)
-                    ->retry(2, 100) // 2 попытки с задержкой 100мс
-                    ->get($url);
+                    ->retry(2, 100); // 2 попытки с задержкой 100мс
+
+                // Определяем, есть ли локальные файлы для multipart/form-data
+                $fileFields = ['photo','video','audio','document','animation','thumbnail','sticker'];
+                $hasFiles = false;
+                $data = [];
+
+                foreach ($query as $key => $value) {
+                    $isLocalFile = false;
+                    if (is_string($value)) {
+                        $isUrl = (bool) filter_var($value, FILTER_VALIDATE_URL);
+                        if (!$isUrl && @is_file($value) && @is_readable($value)) {
+                            $isLocalFile = true;
+                        }
+                    }
+
+                    if (in_array($key, $fileFields, true) && $isLocalFile) {
+                        $hasFiles = true;
+                    }
+                }
+
+                if ($hasFiles) {
+                    // Прикрепляем файлы через attach, остальные поля отправляем как часть multipart
+                    foreach ($query as $key => $value) {
+                        $isUrl = is_string($value) && (bool) filter_var($value, FILTER_VALIDATE_URL);
+                        $isLocalFile = is_string($value) && !$isUrl && @is_file($value) && @is_readable($value);
+
+                        if ($isLocalFile) {
+                            $request = $request->attach($key, fopen($value, 'r'), basename($value));
+                        } else {
+                            // Преобразуем массивы в JSON где это необходимо (например, reply_markup)
+                            $data[$key] = is_array($value) ? json_encode($value) : $value;
+                        }
+                    }
+
+                    $response = $request->post($url, $data);
+                } else {
+                    // Без файлов сериализуем массивы/объекты в JSON-строки (как требует Bot API)
+                    $normalized = [];
+                    foreach ($query as $key => $value) {
+                        $normalized[$key] = is_array($value) ? json_encode($value) : $value;
+                    }
+                    $response = $request->asForm()->post($url, $normalized);
+                }
                 
                 // Проверяем rate limit
                 if ($response->status() === 429) {

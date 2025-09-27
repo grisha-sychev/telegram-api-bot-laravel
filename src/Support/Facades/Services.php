@@ -317,10 +317,10 @@ class Services
     {
         foreach ($array as $value) {
             if (stripos($data, $value) !== false) {
-                return false; // Найдено совпадение
+                return true; // Найдено совпадение
             }
         }
-        return true; // Совпадений не найдено
+        return false; // Совпадений не найдено
     }
 
 
@@ -347,10 +347,11 @@ class Services
 
     public static function isSSLAvailable()
     {
-        $scheme = parse_url(self::getCurrentUrl(), PHP_URL_SCHEME);
-        $host = parse_url(self::getCurrentUrl(), PHP_URL_HOST);
+        $url = self::getCurrentUrl();
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+        $host = parse_url($url, PHP_URL_HOST);
 
-        if ($scheme !== 'https') {
+        if ($scheme !== 'https' || empty($host)) {
             return false;
         }
 
@@ -369,10 +370,19 @@ class Services
 
     private static function getCurrentUrl()
     {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
-        $host = $_SERVER['HTTP_HOST'];
-        $uri = $_SERVER['REQUEST_URI'];
+        // CLI/Artisan fallback to APP_URL
+        $appUrl = function_exists('config') ? (config('app.url') ?: null) : null;
 
-        return "$protocol://$host$uri";
+        // If not in HTTP context, use APP_URL or localhost
+        if (php_sapi_name() === 'cli' || !isset($_SERVER) || empty($_SERVER)) {
+            return $appUrl ?: 'http://localhost';
+        }
+
+        $httpsOn = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $protocol = $httpsOn ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'] ?? (parse_url($appUrl ?? '', PHP_URL_HOST) ?: 'localhost');
+        $uri = $_SERVER['REQUEST_URI'] ?? '/';
+
+        return $protocol . '://' . $host . $uri;
     }
 }

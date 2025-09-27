@@ -1,11 +1,10 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Bot\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use App\Models\Bot;
 
 class StatsCommand extends Command
@@ -243,7 +242,7 @@ class StatsCommand extends Command
         if (isset($stats['bot_info']['error'])) {
             $this->error("  ❌ {$stats['bot_info']['error']}");
         } else {
-            $this->line("  📝 Имя: {$stats['bot_info']['display_name']}");
+            $this->line("  📝 Имя: {$stats['bot_info']['first_name']}");
             $this->line("  🆔 Username: @{$stats['bot_info']['username']}");
         }
 
@@ -268,7 +267,7 @@ class StatsCommand extends Command
     private function displayAllBotsStats(array $stats, string $period, bool $detailed): void
     {
         $this->info('🤖 Общая статистика:');
-        $this->line("  🌍 Окружение: {$stats['environment']}");
+        $this->line("  🌍 Окружение: " . app()->environment());
         $this->line("  📊 Всего ботов: {$stats['total_bots']}");
         $this->line("  ✅ Активных: {$stats['enabled_bots']}");
         $this->line("  🗝️  С токенами: {$stats['bots_with_token']}");

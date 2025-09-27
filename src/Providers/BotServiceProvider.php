@@ -4,12 +4,6 @@ namespace Bot\Providers;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
-// use Bot\Console\Commands\HealthCommand;
-// use Bot\Console\Commands\SetupCommand;
-// use Bot\Console\Commands\ConfigCommand;
-// use Bot\Console\Commands\StatsCommand;
-// use Bot\Console\Commands\WebhookCommand;
-// use Bot\Console\Commands\MigrateCommand;
 
 /**
  * Bot Service Provider
@@ -21,13 +15,13 @@ class BotServiceProvider extends ServiceProvider
      * All console commands.
      */
     protected $commands = [
-        // Команды временно отключены до публикации в приложение
-        // HealthCommand::class,
-        // SetupCommand::class,
-        // ConfigCommand::class,
-        // StatsCommand::class,
-        // WebhookCommand::class,
-        // MigrateCommand::class,
+        // Делаем доступными команды без публикации
+        \Bot\Console\Commands\HealthCommand::class,
+        \Bot\Console\Commands\SetupCommand::class,
+        \Bot\Console\Commands\ConfigCommand::class,
+        \Bot\Console\Commands\StatsCommand::class,
+        \Bot\Console\Commands\WebhookCommand::class,
+        \Bot\Console\Commands\MigrateCommand::class,
         \Bot\Console\Commands\PublishCommand::class,
     ];
 
@@ -36,11 +30,7 @@ class BotServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Регистрируем конфигурацию
-        $this->mergeConfigFrom(
-            __DIR__ . '/../../config/bot.php',
-            'bot'
-        );
+        //
     }
 
     /**
@@ -73,11 +63,6 @@ class BotServiceProvider extends ServiceProvider
                 __DIR__ . '/../../app' => app_path(),
             ], ['bot-app', 'app']);
 
-            // Маршруты (не публикуем bot.php чтобы избежать конфликтов)
-            // $this->publishes([
-            //     __DIR__ . '/../../routes' => base_path('routes'),
-            // ], ['bot-routes', 'routes']);
-
             // Миграции
             $this->publishes([
                 __DIR__ . '/../../database' => database_path(),
@@ -91,9 +76,7 @@ class BotServiceProvider extends ServiceProvider
             // Все файлы сразу
             $pathsToPublish = [
                 __DIR__ . '/../../app' => app_path(),
-                __DIR__ . '/../../config' => config_path(),
                 __DIR__ . '/../../database' => database_path(),
-                // __DIR__ . '/../../routes' => base_path('routes'), // Не публикуем routes чтобы избежать конфликтов
                 __DIR__ . '/../../resources' => base_path('resources'),
             ];
 
@@ -106,24 +89,10 @@ class BotServiceProvider extends ServiceProvider
      */
     protected function bootRoutes(): void
     {
-        $this->map();
-
-        $route = base_path('routes/bot.php');
-
-        if (file_exists($route)) {
-            $this->loadRoutesFrom($route);
-        }
-    }
-
-    /**
-     * Map services.
-     */
-    public function map(): void
-    {
-        $route = base_path('routes/bot.php');
-
-        if (file_exists($route)) {
-            Route::withoutMiddleware(['web', 'App\Http\Middleware\VerifyCsrfToken'])->group($route);
+        // Загружаем роуты ТОЛЬКО из пакета
+        $packageRoute = __DIR__ . '/../../routes/bot.php';
+        if (file_exists($packageRoute)) {
+            \Illuminate\Support\Facades\Route::withoutMiddleware(['web', 'App\\Http\\Middleware\\VerifyCsrfToken'])->group($packageRoute);
         }
     }
 

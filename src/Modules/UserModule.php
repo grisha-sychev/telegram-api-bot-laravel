@@ -2,7 +2,7 @@
 
 namespace Bot\Modules;
 
-use App\Models\UserTelegram;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 use Exception;
@@ -12,6 +12,16 @@ trait UserModule
     public $updateUserTelegram = true;
     public $cacheUserData = true;
     public $logUserActions = true;
+    /**
+     * Класс модели пользователя. Можно переопределить в наследнике.
+     * По умолчанию используется App\Models\UserTelegram
+     */
+    public string $model = \App\Models\UserTelegram::class;
+
+    /**
+     * Поля пользователя для сравнения при обновлении (можно переопределить/расширить)
+     */
+    protected array $userFieldsToCheck = ['first_name', 'last_name', 'username', 'language_code', 'is_premium'];
 
     /**
      * Initialize user module
@@ -57,7 +67,7 @@ trait UserModule
     /**
      * Get user telegram with caching
      */
-    private function getUserTelegram(): ?UserTelegram
+    protected function getUserTelegram(): ?Model
     {
         try {
             $telegramId = $this->getUserId();
@@ -69,11 +79,19 @@ trait UserModule
             if ($this->cacheUserData) {
                 $cacheKey = "user_telegram_{$telegramId}";
                 return Cache::remember($cacheKey, 3600, function () use ($telegramId) {
-                    return UserTelegram::findByTelegramId($telegramId);
+                    $modelClass = $this->getUserModelClass();
+                    if (method_exists($modelClass, 'findByTelegramId')) {
+                        return $modelClass::findByTelegramId($telegramId);
+                    }
+                    return $modelClass::where('telegram_id', $telegramId)->first();
                 });
             }
 
-            return UserTelegram::findByTelegramId($telegramId);
+            $modelClass = $this->getUserModelClass();
+            if (method_exists($modelClass, 'findByTelegramId')) {
+                return $modelClass::findByTelegramId($telegramId);
+            }
+            return $modelClass::where('telegram_id', $telegramId)->first();
         } catch (Exception $e) {
             $this->logError('Failed to get user telegram', $e);
             return null;
@@ -83,7 +101,7 @@ trait UserModule
     /**
      * Set or update user telegram data
      */
-    private function setUserTelegram(bool $forceUpdate = false): ?UserTelegram
+    protected function setUserTelegram(bool $forceUpdate = false): ?Model
     {
         try {
             $message = $this->getMessage();
@@ -98,7 +116,7 @@ trait UserModule
                 return null;
             }
 
-            $telegramData = $this->extractTelegramData($data);
+            $telegramData = $this->extendTelegramData($this->extractTelegramData($data));
             
             if (!$this->validateTelegramData($telegramData)) {
                 Log::warning('Invalid telegram data received', $telegramData);
@@ -106,10 +124,19 @@ trait UserModule
             }
 
             $user = $this->getUserTelegram();
+            $modelClass = $this->getUserModelClass();
 
             if (!$user) {
                 // Create new user
-                $user = UserTelegram::createOrUpdateFromTelegram($telegramData);
+                if (method_exists($modelClass, 'createOrUpdateFromTelegram')) {
+                    $user = $modelClass::createOrUpdateFromTelegram($telegramData);
+                } else {
+                    // Универсальный путь через updateOrCreate
+                    $user = $modelClass::updateOrCreate(
+                        ['telegram_id' => $telegramData['id']],
+                        $this->filterFillableAttributes($telegramData, new $modelClass)
+                    );
+                }
                 
                 if ($this->logUserActions) {
                     Log::info('New user registered', [
@@ -120,7 +147,12 @@ trait UserModule
                 }
             } elseif ($forceUpdate || $this->shouldUpdateUser($user, $telegramData)) {
                 // Update existing user
-                $user->updateFromTelegramData($telegramData);
+                if (method_exists($user, 'updateFromTelegramData')) {
+                    $user->updateFromTelegramData($telegramData);
+                } else {
+                    $user->fill($this->filterFillableAttributes($telegramData, $user));
+                    $user->save();
+                }
                 
                 if ($this->logUserActions) {
                     Log::info('User data updated', [
@@ -145,7 +177,7 @@ trait UserModule
     /**
      * Extract telegram data from API response
      */
-    private function extractTelegramData($data): array
+    protected function extractTelegramData($data): array
     {
         return [
             'id' => $data->getId(),
@@ -161,7 +193,7 @@ trait UserModule
     /**
      * Validate telegram data
      */
-    private function validateTelegramData(array $data): bool
+    protected function validateTelegramData(array $data): bool
     {
         return isset($data['id']) && 
                is_numeric($data['id']) && 
@@ -172,29 +204,24 @@ trait UserModule
     /**
      * Check if user should be updated
      */
-    private function shouldUpdateUser(UserTelegram $user, array $newData): bool
+    protected function shouldUpdateUser(Model $user, array $newData): bool
     {
-        $fieldsToCheck = ['first_name', 'last_name', 'username', 'language_code', 'is_premium'];
-        
-        foreach ($fieldsToCheck as $field) {
-            if ($user->{$field} !== $newData[$field]) {
+        foreach ($this->userFieldsToCheck as $field) {
+            if (array_key_exists($field, $newData) && $user->{$field} !== $newData[$field]) {
                 return true;
             }
         }
-        
         return false;
     }
 
     /**
      * Get changed fields for logging
      */
-    private function getChangedFields(UserTelegram $user, array $newData): array
+    protected function getChangedFields(Model $user, array $newData): array
     {
         $changes = [];
-        $fieldsToCheck = ['first_name', 'last_name', 'username', 'language_code', 'is_premium'];
-        
-        foreach ($fieldsToCheck as $field) {
-            if ($user->{$field} !== $newData[$field]) {
+        foreach ($this->userFieldsToCheck as $field) {
+            if (array_key_exists($field, $newData) && $user->{$field} !== $newData[$field]) {
                 $changes[$field] = [
                     'old' => $user->{$field},
                     'new' => $newData[$field],
@@ -208,7 +235,7 @@ trait UserModule
     /**
      * Get current user with error handling
      */
-    public function getCurrentUser(): ?UserTelegram
+    public function getCurrentUser(): ?Model
     {
         try {
             return $this->getUserTelegram();
@@ -232,7 +259,17 @@ trait UserModule
     public function getUserDisplayName(): string
     {
         $user = $this->getCurrentUser();
-        return $user ? $user->display_name : 'Unknown User';
+        if (!$user) return 'Unknown User';
+        // Если модель имеет аксессор display_name
+        if (isset($user->display_name)) {
+            return $user->display_name;
+        }
+        // Иначе собираем имя
+        $username = $user->username ?? null;
+        if ($username) return '@' . ltrim($username, '@');
+        $first = $user->first_name ?? '';
+        $last = $user->last_name ?? '';
+        return trim($first . ' ' . $last) ?: 'Unknown User';
     }
 
     /**
@@ -241,7 +278,8 @@ trait UserModule
     public function isUserPremium(): bool
     {
         $user = $this->getCurrentUser();
-        return $user ? $user->isPremium() : false;
+        if (!$user) return false;
+        return method_exists($user, 'isPremium') ? $user->isPremium() : (bool) ($user->is_premium ?? false);
     }
 
     /**
@@ -250,7 +288,7 @@ trait UserModule
     public function getUserLanguage(): string
     {
         $user = $this->getCurrentUser();
-        return $user ? $user->language_code : 'en';
+        return $user ? ($user->language_code ?? 'en') : 'en';
     }
 
     /**
@@ -274,14 +312,51 @@ trait UserModule
     public function getUserStats(): array
     {
         try {
+            $modelClass = $this->getUserModelClass();
             return [
-                'new_users_today' => UserTelegram::getNewUsersToday(),
-                'active_users_week' => UserTelegram::getActiveUsers(7),
-                'total_users' => UserTelegram::count(),
+                'new_users_today' => method_exists($modelClass, 'getNewUsersToday') ? $modelClass::getNewUsersToday() : 0,
+                'active_users_week' => method_exists($modelClass, 'getActiveUsers') ? $modelClass::getActiveUsers(7) : 0,
+                'total_users' => $modelClass::count(),
             ];
         } catch (Exception $e) {
             $this->logError('Failed to get user stats', $e);
             return [];
         }
+    }
+
+    /**
+     * Класс модели пользователя (можно переопределить или сконфигурировать)
+     */
+    protected function getUserModelClass(): string
+    {
+        return $this->model;
+    }
+
+    /**
+     * Фильтрация входящих атрибутов по fillable модели
+     */
+    protected function filterFillableAttributes(array $data, Model $model): array
+    {
+        $fillable = method_exists($model, 'getFillable') ? $model->getFillable() : array_keys($data);
+        $map = [
+            // соответствие ключей телеграма полям модели по умолчанию
+            'id' => 'telegram_id',
+        ];
+        $result = [];
+        foreach ($data as $key => $value) {
+            $field = $map[$key] ?? $key;
+            if (in_array($field, $fillable, true)) {
+                $result[$field] = $value;
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Точка расширения для добавления/трансформации данных перед сохранением
+     */
+    protected function extendTelegramData(array $data): array
+    {
+        return $data;
     }
 }

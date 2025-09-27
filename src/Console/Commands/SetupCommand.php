@@ -1,12 +1,12 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Bot\Console\Commands;
 
+use Bot\Support\Facades\Services;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use App\Models\Bot;
-use Illuminate\Support\Facades\DB;
 
 class SetupCommand extends Command
 {
@@ -275,7 +275,8 @@ class SetupCommand extends Command
         if ($this->shouldExit) {
             return null;
         }
-        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', false);
+
+        $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', Services::isSSLAvailable() ? true : false);
 
         return [
             'name' => $name,

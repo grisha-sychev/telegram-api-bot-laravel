@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Enums;
+namespace Bot\Enums;
 
 /**
  * Enum для типов медиа в Telegram Bot API

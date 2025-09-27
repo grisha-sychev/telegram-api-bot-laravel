@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Bot\Console\Commands;
 
+use Bot\Support\Facades\Services;
 use Illuminate\Console\Command;
 use App\Models\Bot;
 use Illuminate\Support\Facades\Http;
@@ -9,7 +10,7 @@ use Illuminate\Support\Facades\Http;
 class BotCommand extends Command
 {
     protected $signature = 'bot:manage 
-                            {action : Action (list, show, enable, disable, delete, test)}
+                            {action? : Action (list, show, enable, disable, delete, test)}
                             {bot? : Bot name or ID}
                             {--format=table : Output format (table, json)}
                             {--no-ssl : Отключить проверку SSL сертификатов}';
@@ -19,6 +20,9 @@ class BotCommand extends Command
     public function handle()
     {
         $action = $this->argument('action');
+        if (!$action) {
+            $action = $this->choice('Выберите действие', ['list', 'show', 'enable', 'disable', 'delete', 'test'], 0);
+        }
 
         switch ($action) {
             case 'list':
@@ -271,7 +275,7 @@ class BotCommand extends Command
             $this->info("🧪 Тестирование бота '{$bot->name}'...");
 
             // Проверяем SSL настройки
-            $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', false);
+            $noSsl = $this->option('no-ssl') ?: $this->confirm('Отключить проверку SSL сертификатов? (только для разработки)', Services::isSSLAvailable() ? true : false);
             if ($noSsl) {
                 $this->warn('⚠️  SSL проверка отключена');
             }
@@ -305,7 +309,7 @@ class BotCommand extends Command
                 if ($response->successful()) {
                     $botInfo = $response->json()['result'];
                     $this->info('   ✅ API подключение работает');
-                    $this->line("   📝 Имя: {$botInfo['display_name']}");
+                    $this->line("   📝 Имя: {$botInfo['first_name']}");
                     $this->line("   🆔 Username: @{$botInfo['username']}");
                 } else {
                     $this->error('   ❌ Ошибка API: ' . $response->status());
@@ -346,7 +350,13 @@ class BotCommand extends Command
                     if ($response->successful()) {
                         $webhookInfo = $response->json()['result'];
                         
-                        if ($webhookInfo['url'] === $bot->webhook_url) {
+                        $dbUrl = $bot->webhook_url;
+                        $appUrl = rtrim(env('APP_URL', ''), '/');
+                        if ($dbUrl && str_starts_with($dbUrl, '/') && $appUrl) {
+                            $dbUrl = $appUrl . $dbUrl;
+                        }
+
+                        if ($webhookInfo['url'] === $dbUrl) {
                             $this->info('   ✅ Webhook настроен корректно');
                         } else {
                             $this->warn("   ⚠️  Webhook URL не совпадает: {$webhookInfo['url']}");

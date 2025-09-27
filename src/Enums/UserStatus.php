@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Enums;
+namespace Bot\Enums;
 
 enum UserStatus: string
 {

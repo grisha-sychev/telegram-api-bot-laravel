@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Bot\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
