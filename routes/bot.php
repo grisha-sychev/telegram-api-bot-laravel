@@ -15,60 +15,67 @@ use App\Models\Bot;
  * Боты загружаются из базы данных
  */
 Route::post('/webhook/{webhookUrl}', function ($webhookUrl) {
+    // Сохраняем ВСЕ данные из request ДО отправки ответа, потому что после
+    // fastcgi_finish_request() объект request может быть недоступен
+    $secretToken = request()->header('x-telegram-bot-api-secret-token');
+    $payload = request()->all();
+
+    // Отдаем 200 СРАЗУ — это критично для Telegram (таймаут 60 сек)
+    http_response_code(200);
+    header('Content-Type: application/json');
+    echo json_encode(['ok' => true]);
+    
+    // Принудительно сбрасываем все буферы
+    if (ob_get_level() > 0) {
+        ob_end_flush();
+    }
+    flush();
+    
+    // Завершаем HTTP-соединение
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
+
+    // Теперь обрабатываем webhook в фоне (соединение уже закрыто, 502 невозможен)
     try {
-        // Ищем бота в базе данных
         $botModel = Bot::where('webhook_url', $webhookUrl)->where('enabled', true)->first();
-        
+
         if (!$botModel) {
-            return response()->json(['error' => 'Not found'], 404);
+            return;
         }
 
-        // Проверяем заголовок x-telegram-bot-api-secret-token
-        $secretToken = request()->header('x-telegram-bot-api-secret-token');
-        $expectedSecret = $botModel->webhook_secret;
-        
-        if ($secretToken !== $expectedSecret) {
-            return response()->json(['error' => 'Not found'], 404);
+        if ($secretToken !== $botModel->webhook_secret) {
+            return;
         }
 
-        // Формируем имя класса бота
         $class = $botModel->getBotClass();
 
         if (!class_exists($class)) {
             \Log::error("Bot: Bot class not found: {$class}");
-            return response()->json(['error' => 'Bot class not found'], 404);
+            return;
         }
-        
-        // Создаем экземпляр бота
+
         $bot = new $class();
-        
-        // Устанавливаем токен для LightBot
+
         if (method_exists($bot, 'setToken')) {
             $bot->setToken($botModel->token);
         }
 
-        // Устанавливаем дополнительные настройки если метод существует
         if (method_exists($bot, 'setBotModel')) {
             $bot->setBotModel($botModel);
         }
-        
-        // Запускаем обработку (приоритет: main > run)
+
         if (method_exists($bot, 'main')) {
-            return $bot->main();
+            $bot->main();
         } elseif (method_exists($bot, 'run')) {
-            return $bot->run()->main();
+            $bot->run()->main();
         } else {
             \Log::error("Bot: Bot {$class} has no main() or run() method");
-            return response()->json(['error' => 'Bot method not found'], 500);
         }
-        
-    } catch (\Exception $e) {
+    } catch (\Throwable $e) {
         \Log::error("Bot: Error processing webhook for {$webhookUrl}: " . $e->getMessage(), [
-            'bot' => $botModel->name,
             'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
+            'trace' => $e->getTraceAsString(),
         ]);
-        
-        return response()->json(['error' => 'Internal server error'], 500);
     }
 })->name('bot.webhook'); 
