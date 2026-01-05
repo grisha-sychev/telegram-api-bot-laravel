@@ -238,7 +238,7 @@ class LightBot extends Skeleton
      */
     public function getMessageType(): string
     {
-        $request = request()->all();
+        $request = $this->updateData ?? request()->all();
         $message = $request['message'] ?? [];
 
         // Медиа контент
@@ -450,8 +450,8 @@ class LightBot extends Skeleton
      */
     public function getChatType(): string
     {
-        $request = request()->all();
-        $message = $request['message'] ?? [];
+        $data = $this->updateData ?? request()->all();
+        $message = $data['message'] ?? [];
         return $message['chat']['type'] ?? 'unknown';
     }
 
@@ -594,7 +594,7 @@ class LightBot extends Skeleton
             return false;
         }
 
-        $request = request()->all();
+        $request = $this->updateData ?? request()->all();
         $message = $request['message'] ?? [];
 
         // Проверяем наличие медиа контента
@@ -632,7 +632,7 @@ class LightBot extends Skeleton
             }
 
             // Запускаем через middleware конвейер
-            $this->runThroughMiddleware(request()->all(), function ($update) {
+            $this->runThroughMiddleware($this->updateData ?? request()->all(), function ($update) {
                 // Проверяем нужно ли игнорировать медиа
                 if ($this->hasMediaWithoutText() && $this->shouldIgnoreMedia()) {
                     return;
@@ -881,7 +881,7 @@ class LightBot extends Skeleton
      */
     public function getPhotoInfo(): ?array
     {
-        $request = request()->all();
+        $request = $this->updateData ?? request()->all();
         $message = $request['message'] ?? [];
         
         if (!isset($message['photo'])) {
@@ -904,7 +904,7 @@ class LightBot extends Skeleton
      */
     public function getVideoInfo(): ?array
     {
-        $request = request()->all();
+        $request = $this->updateData ?? request()->all();
         $message = $request['message'] ?? [];
         
         if (!isset($message['video'])) {
@@ -930,7 +930,7 @@ class LightBot extends Skeleton
      */
     public function getDocumentInfo(): ?array
     {
-        $request = request()->all();
+        $request = $this->updateData ?? request()->all();
         $message = $request['message'] ?? [];
         
         if (!isset($message['document'])) {
@@ -1025,7 +1025,7 @@ class LightBot extends Skeleton
             return;
         }
 
-        $request = request()->all();
+        $request = $this->updateData ?? request()->all();
         $message = $request['message'] ?? [];
         $caption = $message['caption'] ?? null;
 
