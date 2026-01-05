@@ -25,11 +25,24 @@ class Core
     public ?string $hostname = null;
 
     /**
+     * @var array|null $updateData Данные update от Telegram (для Job).
+     */
+    protected ?array $updateData = null;
+
+    /**
      * Устанавливает токен бота напрямую
      */
     public function setToken(string $token): void
     {
         $this->token = $token;
+    }
+
+    /**
+     * Устанавливает данные update (для обработки через Job)
+     */
+    public function setUpdateData(array $data): void
+    {
+        $this->updateData = $data;
     }
 
     /**
@@ -169,6 +182,7 @@ public function method($method, $query = [])
      */
     public function request()
     {
-        return new DynamicData(request()->all());
+        $data = $this->updateData ?? request()->all();
+        return new DynamicData($data);
     }
 }
