@@ -25,24 +25,11 @@ class Core
     public ?string $hostname = null;
 
     /**
-     * @var array|null $updateData Данные update от Telegram (для Job).
-     */
-    protected ?array $updateData = null;
-
-    /**
      * Устанавливает токен бота напрямую
      */
     public function setToken(string $token): void
     {
         $this->token = $token;
-    }
-
-    /**
-     * Устанавливает данные update (для обработки через Job)
-     */
-    public function setUpdateData(array $data): void
-    {
-        $this->updateData = $data;
     }
 
     /**
@@ -60,18 +47,34 @@ class Core
      */
 public function method($method, $query = [])
 {
-    $maxRetries = 3;
-    $baseDelay = 1;
+    $maxRetries = (int) config('bot.api.retries', 3);
+    $maxRetries = $maxRetries > 0 ? $maxRetries : 1;
+
+    $baseDelay = (int) config('bot.api.retry_delay', 1);
+    $baseDelay = $baseDelay > 0 ? $baseDelay : 1;
+
+    $timeout = (int) config('bot.api.timeout', 30);
+    $timeout = $timeout > 0 ? $timeout : 30;
+
+    $connectTimeout = (int) config('bot.api.connect_timeout', 5);
+    $connectTimeout = $connectTimeout > 0 ? $connectTimeout : 5;
+
+    $baseUrl = (string) config('bot.api.base_url', 'https://api.telegram.org');
+    $baseUrl = rtrim($baseUrl, '/');
 
     for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
         try {
             $token = $this->token ?? (new Services)->getToken($this->bot);
-            $url = "https://api.telegram.org/bot" . $token . "/" . $method;
+            $url = $baseUrl . "/bot" . $token . "/" . $method;
 
+            // Добавляем CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4
             $request = Http::withoutVerifying()
-                ->timeout(10)
+                ->timeout($timeout)
                 ->withOptions([
-                    'curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4],
+                    'curl' => [
+                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
+                    ],
                 ]);
 
             $fileFields = ['photo','video','audio','document','animation','thumbnail','sticker'];
@@ -114,7 +117,9 @@ public function method($method, $query = [])
             }
 
             if ($response->status() === 429) {
-                $retryAfter = $response->header('Retry-After', $baseDelay * $attempt);
+                $body = $response->json();
+                $retryAfter = (int) (($body['parameters']['retry_after'] ?? null) ?: $response->header('Retry-After', $baseDelay * $attempt));
+                $retryAfter = $retryAfter > 0 ? $retryAfter : ($baseDelay * $attempt);
                 \Log::warning('Telegram API rate limit hit', [
                     'bot' => $this->bot,
                     'method' => $method,
@@ -180,7 +185,6 @@ public function method($method, $query = [])
      */
     public function request()
     {
-        $data = $this->updateData ?? request()->all();
-        return new DynamicData($data);
+        return new DynamicData(request()->all());
     }
 }

@@ -15,48 +15,79 @@ use App\Models\Bot;
  * Боты загружаются из базы данных
  */
 Route::post('/webhook/{webhookUrl}', function ($webhookUrl) {
-    $secretToken = request()->header('x-telegram-bot-api-secret-token');
-    $payload = request()->all();
-
-    // Отвечаем сразу
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-    http_response_code(200);
-    header('Content-Type: application/json');
-    header('Connection: close');
-    header('Content-Length: 13');
-    echo '{"ok":true}';
-    flush();
-    if (function_exists('fastcgi_finish_request')) {
-        fastcgi_finish_request();
-    }
-
-    // Обработка
-    $botModel = Bot::where('webhook_url', $webhookUrl)->where('enabled', true)->first();
-    if (!$botModel || $secretToken !== $botModel->webhook_secret) {
-        return;
-    }
-
     try {
-        $class = $botModel->getBotClass();
-        if (!class_exists($class)) {
-            return;
+        // Ищем бота в базе данных
+        $botModel = Bot::where('webhook_url', $webhookUrl)->where('enabled', true)->first();
+        
+        if (!$botModel) {
+            return response()->json(['error' => 'Not found'], 404);
         }
 
+        // Проверяем заголовок x-telegram-bot-api-secret-token
+        $secretToken = request()->header('x-telegram-bot-api-secret-token');
+        $expectedSecret = $botModel->webhook_secret;
+        
+        if ($secretToken !== $expectedSecret) {
+            return response()->json(['error' => 'Not found'], 404);
+        }
+
+        // Формируем имя класса бота
+        $class = $botModel->getBotClass();
+
+        if (!class_exists($class)) {
+            \Log::error("Bot: Bot class not found: {$class}");
+            return response()->json(['error' => 'Bot class not found'], 404);
+        }
+        
+        // Создаем экземпляр бота
         $bot = new $class();
+        
+        // Устанавливаем токен для LightBot
         if (method_exists($bot, 'setToken')) {
             $bot->setToken($botModel->token);
         }
+
+        // Устанавливаем дополнительные настройки если метод существует
         if (method_exists($bot, 'setBotModel')) {
             $bot->setBotModel($botModel);
         }
-        if (method_exists($bot, 'main')) {
-            $bot->main();
-        } elseif (method_exists($bot, 'run')) {
-            $bot->run()->main();
-        }
-    } catch (\Throwable $e) {
-        \Log::error("Webhook error: " . $e->getMessage());
+        
+        // ВАЖНО: webhook должен отвечать быстро, иначе Telegram начнёт ретраить update.
+        // Поэтому отвечаем 200 сразу, а обработку делаем после отправки ответа.
+        $response = response()->json(['ok' => true]);
+
+        register_shutdown_function(function () use ($bot, $class, $webhookUrl) {
+            try {
+                // Запускаем обработку (приоритет: main > run)
+                if (method_exists($bot, 'main')) {
+                    $bot->main();
+                    return;
+                }
+
+                if (method_exists($bot, 'run')) {
+                    $bot->run()->main();
+                    return;
+                }
+
+                \Log::error("Bot: Bot {$class} has no main() or run() method");
+            } catch (\Throwable $e) {
+                \Log::error("Bot: Error processing webhook for {$webhookUrl}: ".$e->getMessage(), [
+                    'bot_class' => $class,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+            }
+        });
+
+        return $response;
+        
+    } catch (\Exception $e) {
+        \Log::error("Bot: Error processing webhook for {$webhookUrl}: " . $e->getMessage(), [
+            'bot' => $botModel->name,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json(['error' => 'Internal server error'], 500);
     }
 })->name('bot.webhook'); 
