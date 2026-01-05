@@ -17,6 +17,7 @@ use App\Models\Bot;
 Route::post('/webhook/{webhookUrl}', function ($webhookUrl) {
     $secretToken = request()->header('x-telegram-bot-api-secret-token');
     $payload = request()->all();
+    $updateId = $payload['update_id'] ?? null;
 
     // Отвечаем сразу
     while (ob_get_level() > 0) {
@@ -30,6 +31,24 @@ Route::post('/webhook/{webhookUrl}', function ($webhookUrl) {
     flush();
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
+    }
+
+    // Дедупликация через БД
+    if ($updateId) {
+        $cacheKey = "tg_upd_{$webhookUrl}_{$updateId}";
+        try {
+            $exists = \DB::table('cache')->where('key', $cacheKey)->exists();
+            if ($exists) {
+                return; // Уже обработано
+            }
+            \DB::table('cache')->insert([
+                'key' => $cacheKey,
+                'value' => '1',
+                'expiration' => time() + 300,
+            ]);
+        } catch (\Throwable $e) {
+            // Если таблицы cache нет - продолжаем без дедупликации
+        }
     }
 
     // Обработка
