@@ -68,16 +68,10 @@ public function method($method, $query = [])
             $token = $this->token ?? (new Services)->getToken($this->bot);
             $url = "https://api.telegram.org/bot" . $token . "/" . $method;
 
-            // Оптимизированные настройки для Telegram API
             $request = Http::withoutVerifying()
-                ->timeout(15)
-                ->connectTimeout(5)
+                ->timeout(10)
                 ->withOptions([
-                    'curl' => [
-                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-                        CURLOPT_FORBID_REUSE => true,
-                        CURLOPT_FRESH_CONNECT => true,
-                    ],
+                    'curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4],
                 ]);
 
             $fileFields = ['photo','video','audio','document','animation','thumbnail','sticker'];
