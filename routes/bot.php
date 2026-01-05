@@ -52,34 +52,15 @@ Route::post('/webhook/{webhookUrl}', function ($webhookUrl) {
             $bot->setBotModel($botModel);
         }
         
-        // ВАЖНО: webhook должен отвечать быстро, иначе Telegram начнёт ретраить update.
-        // Поэтому отвечаем 200 сразу, а обработку делаем после отправки ответа.
-        $response = response()->json(['ok' => true]);
-
-        register_shutdown_function(function () use ($bot, $class, $webhookUrl) {
-            try {
-                // Запускаем обработку (приоритет: main > run)
-                if (method_exists($bot, 'main')) {
-                    $bot->main();
-                    return;
-                }
-
-                if (method_exists($bot, 'run')) {
-                    $bot->run()->main();
-                    return;
-                }
-
-                \Log::error("Bot: Bot {$class} has no main() or run() method");
-            } catch (\Throwable $e) {
-                \Log::error("Bot: Error processing webhook for {$webhookUrl}: ".$e->getMessage(), [
-                    'bot_class' => $class,
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                ]);
-            }
-        });
-
-        return $response;
+        // Запускаем обработку (приоритет: main > run)
+        if (method_exists($bot, 'main')) {
+            return $bot->main();
+        } elseif (method_exists($bot, 'run')) {
+            return $bot->run()->main();
+        } else {
+            \Log::error("Bot: Bot {$class} has no main() or run() method");
+            return response()->json(['error' => 'Bot method not found'], 500);
+        }
         
     } catch (\Exception $e) {
         \Log::error("Bot: Error processing webhook for {$webhookUrl}: " . $e->getMessage(), [

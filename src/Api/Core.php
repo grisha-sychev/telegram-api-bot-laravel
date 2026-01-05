@@ -47,34 +47,21 @@ class Core
      */
 public function method($method, $query = [])
 {
-    $maxRetries = (int) config('bot.api.retries', 3);
-    $maxRetries = $maxRetries > 0 ? $maxRetries : 1;
-
-    $baseDelay = (int) config('bot.api.retry_delay', 1);
-    $baseDelay = $baseDelay > 0 ? $baseDelay : 1;
-
-    $timeout = (int) config('bot.api.timeout', 30);
-    $timeout = $timeout > 0 ? $timeout : 30;
-
-    $connectTimeout = (int) config('bot.api.connect_timeout', 5);
-    $connectTimeout = $connectTimeout > 0 ? $connectTimeout : 5;
-
-    $baseUrl = (string) config('bot.api.base_url', 'https://api.telegram.org');
-    $baseUrl = rtrim($baseUrl, '/');
+    $maxRetries = max(1, (int) config('bot.api.retries', 3));
+    $baseDelay = max(1, (int) config('bot.api.retry_delay', 1));
+    $baseUrl = rtrim((string) config('bot.api.base_url', 'https://api.telegram.org'), '/');
 
     for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
         try {
             $token = $this->token ?? (new Services)->getToken($this->bot);
-            $url = $baseUrl . "/bot" . $token . "/" . $method;
+            $url = "{$baseUrl}/bot{$token}/{$method}";
 
             // Добавляем CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4
             $request = Http::withoutVerifying()
-                ->timeout($timeout)
+                ->timeout((int) config('bot.api.timeout', 30))
+                ->retry(2, 100)
                 ->withOptions([
-                    'curl' => [
-                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-                        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
-                    ],
+                    'curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4],
                 ]);
 
             $fileFields = ['photo','video','audio','document','animation','thumbnail','sticker'];
@@ -107,19 +94,20 @@ public function method($method, $query = [])
                     }
                 }
 
+                /** @var \Illuminate\Http\Client\Response $response */
                 $response = $request->post($url, $data);
             } else {
                 $normalized = [];
                 foreach ($query as $key => $value) {
                     $normalized[$key] = is_array($value) ? json_encode($value) : $value;
                 }
+                /** @var \Illuminate\Http\Client\Response $response */
                 $response = $request->asForm()->post($url, $normalized);
             }
 
             if ($response->status() === 429) {
-                $body = $response->json();
-                $retryAfter = (int) (($body['parameters']['retry_after'] ?? null) ?: $response->header('Retry-After', $baseDelay * $attempt));
-                $retryAfter = $retryAfter > 0 ? $retryAfter : ($baseDelay * $attempt);
+                $retryAfterHeader = $response->header('Retry-After');
+                $retryAfter = is_numeric($retryAfterHeader) ? (int) $retryAfterHeader : ($baseDelay * $attempt);
                 \Log::warning('Telegram API rate limit hit', [
                     'bot' => $this->bot,
                     'method' => $method,
@@ -174,7 +162,8 @@ public function method($method, $query = [])
     {
         // Используем прямой токен если установлен, иначе получаем через Services
         $token = $this->token ?? (new Services)->getToken($this->bot);
-        $url = "https://api.telegram.org/file/bot" . $token . "/" . $file_path;
+        $baseUrl = rtrim((string) config('bot.api.base_url', 'https://api.telegram.org'), '/');
+        $url = "{$baseUrl}/file/bot{$token}/{$file_path}";
         return $url;
     }
 
