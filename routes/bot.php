@@ -15,18 +15,16 @@ use App\Models\Bot;
  * Боты загружаются из базы данных
  */
 Route::post('/webhook/{webhookUrl}', function ($webhookUrl) {
-    // Сохраняем ВСЕ данные из request ДО отправки ответа, потому что после
-    // fastcgi_finish_request() объект request может быть недоступен
+    // Сохраняем ВСЕ данные из request ДО отправки ответа
     $secretToken = request()->header('x-telegram-bot-api-secret-token');
     $payload = request()->all();
+    $updateId = $payload['update_id'] ?? null;
 
-    // Отдаем 200 СРАЗУ — это критично для Telegram (таймаут 60 сек)
-    // Сначала очищаем ВСЕ буферы Laravel/middleware
+    // Отдаем 200 СРАЗУ — это критично для Telegram
     while (ob_get_level() > 0) {
         ob_end_clean();
     }
     
-    // Отправляем ответ напрямую
     http_response_code(200);
     header('Content-Type: application/json');
     header('Connection: close');
@@ -34,15 +32,21 @@ Route::post('/webhook/{webhookUrl}', function ($webhookUrl) {
     echo '{"ok":true}';
     flush();
     
-    // Завершаем HTTP-соединение
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
-        \Log::debug('Bot: fastcgi_finish_request() called successfully');
-    } else {
-        \Log::warning('Bot: fastcgi_finish_request() NOT available - response may be delayed');
     }
 
-    // Теперь обрабатываем webhook в фоне (соединение уже закрыто, 502 невозможен)
+    // Дедупликация: не обрабатываем один update дважды
+    if ($updateId) {
+        $cacheKey = "tg_update_{$webhookUrl}_{$updateId}";
+        if (cache()->has($cacheKey)) {
+            \Log::debug("Bot: Duplicate update_id {$updateId} ignored");
+            return;
+        }
+        cache()->put($cacheKey, true, 300); // 5 минут
+    }
+
+    // Обработка webhook
     try {
         $botModel = Bot::where('webhook_url', $webhookUrl)->where('enabled', true)->first();
 
