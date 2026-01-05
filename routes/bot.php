@@ -33,21 +33,17 @@ Route::post('/webhook/{webhookUrl}', function ($webhookUrl) {
         fastcgi_finish_request();
     }
 
-    // Дедупликация через БД
+    // Дедупликация через Redis (быстро) или fallback
     if ($updateId) {
         $cacheKey = "tg_upd_{$webhookUrl}_{$updateId}";
         try {
-            $exists = \DB::table('cache')->where('key', $cacheKey)->exists();
-            if ($exists) {
+            $redis = app('redis')->connection();
+            if ($redis->exists($cacheKey)) {
                 return; // Уже обработано
             }
-            \DB::table('cache')->insert([
-                'key' => $cacheKey,
-                'value' => '1',
-                'expiration' => time() + 300,
-            ]);
+            $redis->setex($cacheKey, 300, '1');
         } catch (\Throwable $e) {
-            // Если таблицы cache нет - продолжаем без дедупликации
+            // Redis недоступен - продолжаем без дедупликации
         }
     }
 
