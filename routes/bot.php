@@ -21,19 +21,25 @@ Route::post('/webhook/{webhookUrl}', function ($webhookUrl) {
     $payload = request()->all();
 
     // Отдаем 200 СРАЗУ — это критично для Telegram (таймаут 60 сек)
+    // Сначала очищаем ВСЕ буферы Laravel/middleware
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    // Отправляем ответ напрямую
     http_response_code(200);
     header('Content-Type: application/json');
-    echo json_encode(['ok' => true]);
-    
-    // Принудительно сбрасываем все буферы
-    if (ob_get_level() > 0) {
-        ob_end_flush();
-    }
+    header('Connection: close');
+    header('Content-Length: 13');
+    echo '{"ok":true}';
     flush();
     
     // Завершаем HTTP-соединение
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
+        \Log::debug('Bot: fastcgi_finish_request() called successfully');
+    } else {
+        \Log::warning('Bot: fastcgi_finish_request() NOT available - response may be delayed');
     }
 
     // Теперь обрабатываем webhook в фоне (соединение уже закрыто, 502 невозможен)
